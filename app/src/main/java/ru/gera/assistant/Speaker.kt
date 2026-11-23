@@ -26,6 +26,7 @@ class Speaker(context: Context) {
             override fun onStart(utteranceId: String?) {}
             override fun onDone(utteranceId: String?) = finish(utteranceId)
             @Deprecated("Deprecated in Java")
+            @Suppress("OVERRIDE_DEPRECATION")
             override fun onError(utteranceId: String?) = finish(utteranceId)
             override fun onStop(utteranceId: String?, interrupted: Boolean) = finish(utteranceId)
         })

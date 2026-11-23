@@ -105,6 +105,7 @@ class AssistantService : Service() {
         claimMediaButtons()
         isRunning = true
         EventLog.add("Сервис запущен. Распознавание речи доступно: ${speech.isAvailable()}")
+        EventLog.add("Распознавание — ${speech.servicesInfo()}")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {

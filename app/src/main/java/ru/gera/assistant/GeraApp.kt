@@ -12,6 +12,12 @@ class GeraApp : Application() {
     override fun onCreate() {
         super.onCreate()
         val crashFile = File(filesDir, "last_crash.txt")
+        val logFile = File(filesDir, "last_log.txt")
+
+        if (logFile.exists()) {
+            EventLog.restore("--- журнал до вылета ---\n" + logFile.readText())
+            logFile.delete()
+        }
 
         if (crashFile.exists()) {
             val trace = crashFile.readText().lines()
@@ -27,6 +33,7 @@ class GeraApp : Application() {
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, error ->
             runCatching { crashFile.writeText(android.util.Log.getStackTraceString(error)) }
+            runCatching { logFile.writeText(EventLog.text()) }
             previous?.uncaughtException(thread, error)
         }
     }

@@ -19,6 +19,11 @@ object EventLog {
         }
     }
 
+    /** Добавить старые строки в конец (используется после вылета). */
+    fun restore(old: String) = synchronized(lines) {
+        old.lines().filter { it.isNotBlank() }.forEach { if (lines.size < MAX) lines.addLast(it) }
+    }
+
     fun text(): String = synchronized(lines) { lines.joinToString("\n") }
 
     fun clear() = synchronized(lines) { lines.clear() }

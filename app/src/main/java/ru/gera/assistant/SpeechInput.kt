@@ -17,12 +17,32 @@ class SpeechInput(private val context: Context) {
 
     fun isAvailable(): Boolean = SpeechRecognizer.isRecognitionAvailable(context)
 
+    /** Какие приложения на телефоне предоставляют распознавание речи. */
+    fun servicesInfo(): String {
+        val services = context.packageManager.queryIntentServices(
+            Intent(android.speech.RecognitionService.SERVICE_INTERFACE), 0
+        ).map { it.serviceInfo.packageName }
+        val default = runCatching {
+            android.provider.Settings.Secure.getString(context.contentResolver, "voice_recognition_service")
+        }.getOrNull()
+        return "сервисы: ${services.ifEmpty { listOf("нет") }.joinToString()}; по умолчанию: ${default ?: "?"}"
+    }
+
     /**
      * Слушает одну фразу до паузы и возвращает текст.
      * Возвращает null, если ничего не распознано; бросает исключение при ошибке.
      */
     suspend fun listenOnce(): String? = suspendCancellableCoroutine { cont ->
         val recognizer = SpeechRecognizer.createSpeechRecognizer(context)
+
+        // Освобождаем распознаватель ровно один раз: повторный destroy() роняет приложение
+        var released = false
+        fun release(cancel: Boolean) {
+            if (released) return
+            released = true
+            if (cancel) runCatching { recognizer.cancel() }
+            runCatching { recognizer.destroy() }
+        }
 
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
@@ -38,13 +58,14 @@ class SpeechInput(private val context: Context) {
                     ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                     ?.firstOrNull()
                     ?.trim()
-                recognizer.destroy()
+                release(cancel = false)
                 if (cont.isActive) cont.resume(if (text.isNullOrEmpty()) null else text)
             }
 
             override fun onError(error: Int) {
+                if (released) return // ошибка после нашей же отмены — игнорируем
                 EventLog.add("Распознавание: ошибка $error (${SpeechException(error).message})")
-                recognizer.destroy()
+                release(cancel = false)
                 if (!cont.isActive) return
                 when (error) {
                     // "Ничего не сказали" — это не ошибка, просто пустой результат
@@ -65,10 +86,7 @@ class SpeechInput(private val context: Context) {
 
         cont.invokeOnCancellation {
             // Отмена приходит не обязательно из главного потока — уходим в него
-            android.os.Handler(android.os.Looper.getMainLooper()).post {
-                recognizer.cancel()
-                recognizer.destroy()
-            }
+            android.os.Handler(android.os.Looper.getMainLooper()).post { release(cancel = true) }
         }
 
         recognizer.startListening(intent)

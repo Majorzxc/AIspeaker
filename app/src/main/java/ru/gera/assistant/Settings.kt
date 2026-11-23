@@ -52,6 +52,15 @@ class Settings(context: Context) {
         get() = prefs.getBoolean("stt_via_api", false)
         set(v) = prefs.edit { putBoolean("stt_via_api", v) }
 
+    /** Отдельный провайдер для распознавания. Пусто — используется основной адрес/ключ. */
+    var sttBaseUrl: String
+        get() = prefs.getString("stt_base_url", "") ?: ""
+        set(v) = prefs.edit { putString("stt_base_url", v.trim()) }
+
+    var sttApiKey: String
+        get() = prefs.getString("stt_api_key", "") ?: ""
+        set(v) = prefs.edit { putString("stt_api_key", v.trim()) }
+
     var sttModel: String
         get() = prefs.getString("stt_model", "whisper-1") ?: "whisper-1"
         set(v) = prefs.edit { putString("stt_model", v.trim().ifEmpty { "whisper-1" }) }

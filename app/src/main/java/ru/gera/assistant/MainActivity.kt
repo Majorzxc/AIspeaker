@@ -40,6 +40,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var textLog: TextView
     private lateinit var switchSttApi: MaterialSwitch
     private lateinit var editSttModel: EditText
+    private lateinit var editSttBaseUrl: EditText
+    private lateinit var editSttApiKey: EditText
     private lateinit var textModelStatus: TextView
     private lateinit var btnDownloadModel: Button
     private var downloading = false
@@ -89,6 +91,8 @@ class MainActivity : AppCompatActivity() {
         textLog = findViewById(R.id.textLog)
         switchSttApi = findViewById(R.id.switchSttApi)
         editSttModel = findViewById(R.id.editSttModel)
+        editSttBaseUrl = findViewById(R.id.editSttBaseUrl)
+        editSttApiKey = findViewById(R.id.editSttApiKey)
         textModelStatus = findViewById(R.id.textModelStatus)
         btnDownloadModel = findViewById(R.id.btnDownloadModel)
         btnDownloadModel.setOnClickListener { downloadModel() }
@@ -225,6 +229,8 @@ class MainActivity : AppCompatActivity() {
         switchHeadsetMic.isChecked = settings.useHeadsetMic
         switchSttApi.isChecked = settings.sttViaApi
         editSttModel.setText(settings.sttModel)
+        editSttBaseUrl.setText(settings.sttBaseUrl)
+        editSttApiKey.setText(settings.sttApiKey)
         switchWake.isChecked = settings.wakeWordEnabled
         editWakeWords.setText(settings.wakeWords)
         seekSensitivity.progress = settings.micSensitivity
@@ -247,6 +253,8 @@ class MainActivity : AppCompatActivity() {
         settings.useHeadsetMic = switchHeadsetMic.isChecked
         settings.sttViaApi = switchSttApi.isChecked
         settings.sttModel = editSttModel.text.toString()
+        settings.sttBaseUrl = editSttBaseUrl.text.toString()
+        settings.sttApiKey = editSttApiKey.text.toString()
         settings.wakeWordEnabled = switchWake.isChecked
         settings.wakeWords = editWakeWords.text.toString()
         settings.micSensitivity = seekSensitivity.progress

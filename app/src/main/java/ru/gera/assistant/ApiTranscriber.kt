@@ -12,7 +12,10 @@ import java.util.UUID
 class ApiTranscriber(private val settings: Settings) {
 
     suspend fun transcribe(pcm: ByteArray): String = withContext(Dispatchers.IO) {
-        val base = settings.baseUrl.trimEnd('/').removeSuffix("/chat/completions")
+        // Свой провайдер распознавания, если задан; иначе — основной
+        val base = settings.sttBaseUrl.ifBlank { settings.baseUrl }
+            .trimEnd('/').removeSuffix("/chat/completions").removeSuffix("/audio/transcriptions")
+        val key = settings.sttApiKey.ifBlank { settings.apiKey }
         val url = "$base/audio/transcriptions"
         val boundary = "----gera" + UUID.randomUUID().toString().replace("-", "")
 
@@ -23,6 +26,8 @@ class ApiTranscriber(private val settings: Settings) {
         field("model", settings.sttModel)
         field("language", "ru")
         field("response_format", "json")
+        // Подсказка модели: что за речь ожидается (помогает с тихой речью и шёпотом)
+        field("prompt", "Короткий вопрос голосовому ассистенту, возможно шёпотом.")
         body.write(
             ("--$boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"audio.wav\"\r\n" +
                 "Content-Type: audio/wav\r\n\r\n").toByteArray()
@@ -38,7 +43,7 @@ class ApiTranscriber(private val settings: Settings) {
             conn.readTimeout = 60_000
             conn.doOutput = true
             conn.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
-            if (settings.apiKey.isNotBlank()) conn.setRequestProperty("Authorization", "Bearer ${settings.apiKey}")
+            if (key.isNotBlank()) conn.setRequestProperty("Authorization", "Bearer $key")
             conn.outputStream.use { it.write(body.toByteArray()) }
 
             val code = conn.responseCode

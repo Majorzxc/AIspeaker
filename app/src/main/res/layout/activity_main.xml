@@ -246,6 +246,32 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
+            android:hint="Адрес API распознавания (пусто — основной)">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/editSttBaseUrl"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="textUri" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:hint="API-ключ распознавания (пусто — основной)">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/editSttApiKey"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="textPassword" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
             android:hint="Модель распознавания для API (напр. whisper-1)">
 
             <com.google.android.material.textfield.TextInputEditText

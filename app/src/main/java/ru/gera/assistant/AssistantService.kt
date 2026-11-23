@@ -31,7 +31,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * Фоновый сервис ассистента. Пока он запущен:
@@ -64,7 +63,8 @@ class AssistantService : Service() {
     private val mainHandler = Handler(Looper.getMainLooper())
 
     private lateinit var settings: Settings
-    private lateinit var speech: SpeechInput
+    private val recorder = VoiceRecorder()
+    private lateinit var apiStt: ApiTranscriber
     private lateinit var speaker: Speaker
     private lateinit var llm: LlmClient
     private lateinit var routing: AudioRouting
@@ -79,7 +79,7 @@ class AssistantService : Service() {
     override fun onCreate() {
         super.onCreate()
         settings = Settings(this)
-        speech = SpeechInput(this)
+        apiStt = ApiTranscriber(settings)
         speaker = Speaker(this)
         llm = LlmClient(settings)
         routing = AudioRouting(this)
@@ -104,8 +104,11 @@ class AssistantService : Service() {
         setupMediaSession()
         claimMediaButtons()
         isRunning = true
-        EventLog.add("Сервис запущен. Распознавание речи доступно: ${speech.isAvailable()}")
-        EventLog.add("Распознавание — ${speech.servicesInfo()}")
+        EventLog.add(
+            "Сервис запущен. Распознавание: " +
+                if (settings.sttViaApi) "через API (${settings.sttModel})"
+                else "офлайн Vosk, модель ${if (VoskEngine.isDownloaded(this)) "скачана" else "НЕ скачана"}"
+        )
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -226,13 +229,19 @@ class AssistantService : Service() {
             delay(250) // чтобы сигнал не попал в запись
             updateStatus("Слушаю…")
 
-            if (!speech.isAvailable()) throw IllegalStateException("распознавание речи недоступно на телефоне")
-            EventLog.add("Запускаю распознавание…")
-            // Если распознаватель "завис" и молчит — не ждём вечно
-            val question = (withTimeoutOrNull(20_000) { listOf(speech.listenOnce()) }
-                ?: throw IllegalStateException("распознавание не ответило за 20 секунд")).first()
-            EventLog.add("Распознано: ${question ?: "(ничего)"}")
+            if (!settings.sttViaApi && !VoskEngine.isDownloaded(this)) {
+                throw IllegalStateException("офлайн-модель не скачана, откройте Геру и нажмите «Скачать»")
+            }
+            val pcm = recorder.recordPhrase(settings.useHeadsetMic)
             routing.disableHeadsetMic() // ответ — снова в нормальном качестве
+
+            val question = if (pcm == null) null else {
+                updateStatus("Распознаю…")
+                val text = if (settings.sttViaApi) apiStt.transcribe(pcm)
+                           else VoskEngine.transcribe(this, pcm)
+                text.ifBlank { null }
+            }
+            EventLog.add("Распознано: ${question ?: "(ничего)"}")
 
             if (question == null) {
                 updateStatus("Не расслышал")

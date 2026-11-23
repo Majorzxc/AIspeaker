@@ -165,6 +165,49 @@
                 android:inputType="number" />
         </com.google.android.material.textfield.TextInputLayout>
 
+        <!-- ===== Распознавание ===== -->
+        <TextView
+            style="@style/TextAppearance.Material3.TitleMedium"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:text="Распознавание речи" />
+
+        <TextView
+            android:id="@+id/textModelStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:alpha="0.8"
+            android:text="Офлайн-модель: …" />
+
+        <Button
+            android:id="@+id/btnDownloadModel"
+            style="@style/Widget.Material3.Button.TonalButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Скачать офлайн-модель (~45 МБ)" />
+
+        <com.google.android.material.materialswitch.MaterialSwitch
+            android:id="@+id/switchSttApi"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="Распознавать через API вместо офлайн-модели" />
+
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:hint="Модель распознавания для API (напр. whisper-1)">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/editSttModel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="text" />
+        </com.google.android.material.textfield.TextInputLayout>
+
         <!-- ===== Голос ===== -->
         <TextView
             style="@style/TextAppearance.Material3.TitleMedium"

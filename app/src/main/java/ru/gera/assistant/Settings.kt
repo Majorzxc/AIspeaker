@@ -47,6 +47,15 @@ class Settings(context: Context) {
         get() = prefs.getBoolean("headset_mic", false)
         set(v) = prefs.edit { putBoolean("headset_mic", v) }
 
+    /** true — распознавать через API (/audio/transcriptions), false — офлайн Vosk. */
+    var sttViaApi: Boolean
+        get() = prefs.getBoolean("stt_via_api", false)
+        set(v) = prefs.edit { putBoolean("stt_via_api", v) }
+
+    var sttModel: String
+        get() = prefs.getString("stt_model", "whisper-1") ?: "whisper-1"
+        set(v) = prefs.edit { putString("stt_model", v.trim().ifEmpty { "whisper-1" }) }
+
     companion object {
         val DEFAULT_PROMPT = """
             Ты — Гера, голосовой ассистент. Твой ответ будет прочитан вслух в наушник.

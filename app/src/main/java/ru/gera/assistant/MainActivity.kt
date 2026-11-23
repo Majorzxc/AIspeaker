@@ -38,6 +38,11 @@ class MainActivity : AppCompatActivity() {
     private lateinit var switchTools: MaterialSwitch
     private lateinit var switchHeadsetMic: MaterialSwitch
     private lateinit var textLog: TextView
+    private lateinit var switchSttApi: MaterialSwitch
+    private lateinit var editSttModel: EditText
+    private lateinit var textModelStatus: TextView
+    private lateinit var btnDownloadModel: Button
+    private var downloading = false
 
     // Обновление журнала на экране раз в 0,7 с, пока экран открыт
     private val logHandler = android.os.Handler(android.os.Looper.getMainLooper())
@@ -78,6 +83,11 @@ class MainActivity : AppCompatActivity() {
         switchTools = findViewById(R.id.switchTools)
         switchHeadsetMic = findViewById(R.id.switchHeadsetMic)
         textLog = findViewById(R.id.textLog)
+        switchSttApi = findViewById(R.id.switchSttApi)
+        editSttModel = findViewById(R.id.editSttModel)
+        textModelStatus = findViewById(R.id.textModelStatus)
+        btnDownloadModel = findViewById(R.id.btnDownloadModel)
+        btnDownloadModel.setOnClickListener { downloadModel() }
         findViewById<Button>(R.id.btnClearLog).setOnClickListener { EventLog.clear() }
 
         loadFields()
@@ -196,6 +206,9 @@ class MainActivity : AppCompatActivity() {
         editCity.setText(settings.city)
         switchTools.isChecked = settings.toolsEnabled
         switchHeadsetMic.isChecked = settings.useHeadsetMic
+        switchSttApi.isChecked = settings.sttViaApi
+        editSttModel.setText(settings.sttModel)
+        showModelStatus()
         // Шкала 0..30 соответствует скорости 0.5..2.0 с шагом 0.05
         seekRate.progress = ((settings.speechRate - 0.5f) / 0.05f).toInt().coerceIn(0, 30)
         showRate()
@@ -211,6 +224,39 @@ class MainActivity : AppCompatActivity() {
         settings.speechRate = currentRate()
         settings.toolsEnabled = switchTools.isChecked
         settings.useHeadsetMic = switchHeadsetMic.isChecked
+        settings.sttViaApi = switchSttApi.isChecked
+        settings.sttModel = editSttModel.text.toString()
+    }
+
+    // ---------- Офлайн-модель ----------
+
+    private fun showModelStatus() {
+        if (downloading) return
+        val ok = VoskEngine.isDownloaded(this)
+        textModelStatus.text = if (ok) "Офлайн-модель: скачана ✓" else "Офлайн-модель: не скачана"
+        btnDownloadModel.text = if (ok) "Скачать модель заново" else "Скачать офлайн-модель (~45 МБ)"
+    }
+
+    private fun downloadModel() {
+        if (downloading) return
+        downloading = true
+        btnDownloadModel.isEnabled = false
+        EventLog.add("Скачиваю офлайн-модель…")
+        scope.launch {
+            try {
+                VoskEngine.download(this@MainActivity) { pct ->
+                    runOnUiThread { textModelStatus.text = "Скачивание: $pct %" }
+                }
+                EventLog.add("Офлайн-модель скачана")
+            } catch (e: Exception) {
+                EventLog.add("Ошибка скачивания модели: ${e.message}")
+                Toast.makeText(this@MainActivity, "Не удалось скачать: ${e.message}", Toast.LENGTH_LONG).show()
+            } finally {
+                downloading = false
+                btnDownloadModel.isEnabled = true
+                showModelStatus()
+            }
+        }
     }
 
     private fun currentRate(): Float = 0.5f + seekRate.progress * 0.05f

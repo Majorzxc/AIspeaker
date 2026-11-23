@@ -344,15 +344,20 @@ class AssistantService : Service() {
 
     /** "Гера, какая погода" -> "какая погода". null — если кроме обращения ничего не сказали. */
     private fun stripWakeWord(text: String): String? {
-        val trimChars = charArrayOf(' ', ',', '.', '!', '?', '-', '—', ':')
-        val lower = text.lowercase()
+        // Разбиваем на слова с позициями: ищем триггер только целыми словами ("два" ≠ "дважды")
+        val tokens = Regex("[\\p{L}\\p{N}]+").findAll(text).toList()
+        val lower = tokens.map { it.value.lowercase() }
         for (w in wake.parseWords(settings.wakeWords)) {
-            val idx = lower.indexOf(w)
-            if (idx >= 0) return text.substring(idx + w.length).trim(*trimChars).ifBlank { null }
+            val parts = w.split(' ')
+            for (start in 0..lower.size - parts.size) {
+                if (lower.subList(start, start + parts.size) == parts) {
+                    val after = tokens[start + parts.size - 1].range.last + 1
+                    return text.substring(after).trim(' ', ',', '.', '!', '?', '-', '—', ':').ifBlank { null }
+                }
+            }
         }
         // Слово не нашлось (распознаватель мог записать его иначе): одно слово — считаем это обращением
-        val clean = text.trim(*trimChars)
-        return if (clean.isEmpty() || clean.split(Regex("\\s+")).size <= 1) null else clean
+        return if (tokens.size <= 1) null else text.trim()
     }
 
     private fun beep() {

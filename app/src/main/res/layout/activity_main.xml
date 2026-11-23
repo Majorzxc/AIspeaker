@@ -193,6 +193,13 @@
             android:layout_height="wrap_content"
             android:text="Проверить голос" />
 
+        <Button
+            android:id="@+id/btnTtsSettings"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Настройки синтеза речи (выбрать движок)" />
+
         <com.google.android.material.materialswitch.MaterialSwitch
             android:id="@+id/switchHeadsetMic"
             android:layout_width="match_parent"

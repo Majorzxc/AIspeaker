@@ -15,7 +15,10 @@ class Speaker(context: Context) {
 
     private val ready = CompletableDeferred<Boolean>()
     private val tts: TextToSpeech = TextToSpeech(context.applicationContext) { status ->
-        EventLog.add(if (status == TextToSpeech.SUCCESS) "Синтез речи: готов" else "Синтез речи: НЕ запустился ($status)")
+        EventLog.add(
+            if (status == TextToSpeech.SUCCESS) "Синтез речи: готов (движок ${engineName()})"
+            else "Синтез речи: НЕ запустился ($status)"
+        )
         ready.complete(status == TextToSpeech.SUCCESS)
     }
 
@@ -44,7 +47,7 @@ class Speaker(context: Context) {
 
         val lang = tts.setLanguage(Locale.forLanguageTag("ru-RU"))
         if (lang == TextToSpeech.LANG_MISSING_DATA || lang == TextToSpeech.LANG_NOT_SUPPORTED) {
-            EventLog.add("Синтез речи: нет русского голоса (код $lang)")
+            EventLog.add("Синтез речи: нет русского голоса в движке ${engineName()} (код $lang). Установите RHVoice.")
         }
         tts.setSpeechRate(rate)
         tts.setAudioAttributes(
@@ -65,6 +68,8 @@ class Speaker(context: Context) {
             }
         }
     }
+
+    private fun engineName(): String = runCatching { tts.defaultEngine }.getOrNull() ?: "?"
 
     fun stop() {
         tts.stop()

@@ -118,6 +118,14 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        findViewById<Button>(R.id.btnTtsSettings).setOnClickListener {
+            try {
+                startActivity(Intent("com.android.settings.TTS_SETTINGS"))
+            } catch (e: Exception) {
+                Toast.makeText(this, "Откройте вручную: Настройки → Спец. возможности → Синтез речи", Toast.LENGTH_LONG).show()
+            }
+        }
+
         findViewById<Button>(R.id.btnAskNow).setOnClickListener {
             if (!AssistantService.isRunning) {
                 Toast.makeText(this, "Сначала включите ассистента", Toast.LENGTH_SHORT).show()

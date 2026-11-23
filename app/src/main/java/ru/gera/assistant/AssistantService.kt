@@ -31,6 +31,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * Фоновый сервис ассистента. Пока он запущен:
@@ -95,6 +96,7 @@ class AssistantService : Service() {
         } catch (e: Exception) {
             // Например, если сервис пытаются запустить из фона — Android запрещает доступ к микрофону
             Log.e(TAG, "startForeground failed", e)
+            EventLog.add("Сервис НЕ запустился: ${e.javaClass.simpleName}: ${e.message}")
             stopSelf()
             return
         }
@@ -102,12 +104,16 @@ class AssistantService : Service() {
         setupMediaSession()
         claimMediaButtons()
         isRunning = true
+        EventLog.add("Сервис запущен. Распознавание речи доступно: ${speech.isAvailable()}")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> stopSelf()
-            ACTION_ASK -> onTrigger()
+            ACTION_ASK -> {
+                EventLog.add("Нажата кнопка «Спросить»")
+                onTrigger()
+            }
         }
         return START_NOT_STICKY
     }
@@ -142,6 +148,7 @@ class AssistantService : Service() {
                     KeyEvent.KEYCODE_MEDIA_PLAY,
                     KeyEvent.KEYCODE_MEDIA_PAUSE
                 )
+                EventLog.add("Кнопка гарнитуры: код ${event.keyCode}, действие ${event.action}")
                 if (!ours) return false
                 if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) onTrigger()
                 return true
@@ -199,6 +206,7 @@ class AssistantService : Service() {
 
         // Повторное нажатие во время работы — прервать (например, заткнуть длинный ответ)
         if (job?.isActive == true) {
+            EventLog.add("Прервано повторным нажатием")
             job?.cancel()
             speaker.stop()
             return
@@ -210,7 +218,7 @@ class AssistantService : Service() {
         try {
             routing.requestFocus() // музыка на паузу
             if (settings.useHeadsetMic && !routing.enableHeadsetMic()) {
-                Log.w(TAG, "headset mic not available, using phone mic")
+                EventLog.add("Микрофон гарнитуры недоступен, слушаю микрофоном телефона")
             }
 
             beep()
@@ -218,7 +226,11 @@ class AssistantService : Service() {
             updateStatus("Слушаю…")
 
             if (!speech.isAvailable()) throw IllegalStateException("распознавание речи недоступно на телефоне")
-            val question = speech.listenOnce()
+            EventLog.add("Запускаю распознавание…")
+            // Если распознаватель "завис" и молчит — не ждём вечно
+            val question = (withTimeoutOrNull(20_000) { listOf(speech.listenOnce()) }
+                ?: throw IllegalStateException("распознавание не ответило за 20 секунд")).first()
+            EventLog.add("Распознано: ${question ?: "(ничего)"}")
             routing.disableHeadsetMic() // ответ — снова в нормальном качестве
 
             if (question == null) {
@@ -229,6 +241,7 @@ class AssistantService : Service() {
 
             updateStatus("Думаю: $question")
             val answer = llm.ask(question)
+            EventLog.add("Ответ ИИ: $answer")
 
             updateStatus("Ответ: $answer")
             speaker.speak(answer, settings.speechRate)
@@ -236,6 +249,7 @@ class AssistantService : Service() {
             throw e
         } catch (e: Exception) {
             Log.e(TAG, "pipeline error", e)
+            EventLog.add("ОШИБКА: ${e.javaClass.simpleName}: ${e.message}")
             updateStatus("Ошибка: ${e.message}")
             val spoken = when (e) {
                 is LlmClient.ApiException -> "Ошибка API, код ${e.code}."

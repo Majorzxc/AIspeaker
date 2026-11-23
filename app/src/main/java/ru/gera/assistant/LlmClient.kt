@@ -58,6 +58,7 @@ class LlmClient(private val settings: Settings) {
             for (i in 0 until toolCalls.length()) {
                 val tc = toolCalls.getJSONObject(i)
                 val fn = tc.getJSONObject("function")
+                EventLog.add("ИИ вызвал инструмент ${fn.optString("name")}")
                 val output = runTool(fn.optString("name"), fn.optString("arguments", "{}"))
                 messages.put(JSONObject().apply {
                     put("role", "tool")
@@ -80,7 +81,10 @@ class LlmClient(private val settings: Settings) {
         val headers = if (settings.apiKey.isNotBlank())
             mapOf("Authorization" to "Bearer ${settings.apiKey}") else emptyMap()
 
+        EventLog.add("Запрос к ИИ: ${endpoint()} (tools=$withTools)")
         val resp = Http.postJson(endpoint(), body.toString(), headers)
+        EventLog.add("Ответ API: код ${resp.code}")
+        if (resp.code !in 200..299) EventLog.add("Тело ошибки: ${resp.body.take(300)}")
         if (resp.code in 200..299) return JSONObject(resp.body)
 
         // 400/422 при отправке tools обычно значит "не поддерживаем инструменты"

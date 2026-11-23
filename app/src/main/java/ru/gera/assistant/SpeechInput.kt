@@ -33,6 +33,7 @@ class SpeechInput(private val context: Context) {
 
         recognizer.setRecognitionListener(object : RecognitionListener {
             override fun onResults(results: Bundle?) {
+                EventLog.add("Распознавание: результат получен")
                 val text = results
                     ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                     ?.firstOrNull()
@@ -42,6 +43,7 @@ class SpeechInput(private val context: Context) {
             }
 
             override fun onError(error: Int) {
+                EventLog.add("Распознавание: ошибка $error (${SpeechException(error).message})")
                 recognizer.destroy()
                 if (!cont.isActive) return
                 when (error) {
@@ -52,11 +54,11 @@ class SpeechInput(private val context: Context) {
                 }
             }
 
-            override fun onReadyForSpeech(params: Bundle?) {}
-            override fun onBeginningOfSpeech() {}
+            override fun onReadyForSpeech(params: Bundle?) = EventLog.add("Микрофон готов — говорите")
+            override fun onBeginningOfSpeech() = EventLog.add("Слышу речь…")
             override fun onRmsChanged(rmsdB: Float) {}
             override fun onBufferReceived(buffer: ByteArray?) {}
-            override fun onEndOfSpeech() {}
+            override fun onEndOfSpeech() = EventLog.add("Речь закончилась, распознаю…")
             override fun onPartialResults(partialResults: Bundle?) {}
             override fun onEvent(eventType: Int, params: Bundle?) {}
         })
@@ -80,6 +82,9 @@ class SpeechException(val code: Int) : Exception() {
             SpeechRecognizer.ERROR_AUDIO -> "ошибка микрофона"
             SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "нет доступа к микрофону"
             SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "распознаватель занят"
+            SpeechRecognizer.ERROR_NO_MATCH -> "речь не распознана"
+            SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "не было речи"
+            SpeechRecognizer.ERROR_CLIENT -> "ошибка клиента распознавания"
             else -> "ошибка распознавания, код $code"
         }
 }

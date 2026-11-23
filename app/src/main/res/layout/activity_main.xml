@@ -40,6 +40,41 @@
             android:layout_marginTop="8dp"
             android:text="Спросить сейчас" />
 
+        <!-- ===== Журнал ===== -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                style="@style/TextAppearance.Material3.TitleMedium"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Журнал (новые сверху)" />
+
+            <Button
+                android:id="@+id/btnClearLog"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Очистить" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/textLog"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="#14808080"
+            android:fontFamily="monospace"
+            android:minLines="4"
+            android:padding="8dp"
+            android:text="(пока пусто)"
+            android:textIsSelectable="true"
+            android:textSize="12sp" />
+
         <!-- ===== Подключение ===== -->
         <TextView
             style="@style/TextAppearance.Material3.TitleMedium"

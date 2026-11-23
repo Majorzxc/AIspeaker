@@ -37,6 +37,16 @@ class MainActivity : AppCompatActivity() {
     private lateinit var textRate: TextView
     private lateinit var switchTools: MaterialSwitch
     private lateinit var switchHeadsetMic: MaterialSwitch
+    private lateinit var textLog: TextView
+
+    // Обновление журнала на экране раз в 0,7 с, пока экран открыт
+    private val logHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val logUpdater = object : Runnable {
+        override fun run() {
+            textLog.text = EventLog.text().ifEmpty { "(пока пусто)" }
+            logHandler.postDelayed(this, 700)
+        }
+    }
 
     // Чтобы программная смена тумблера не запускала обработчик
     private var ignoreSwitch = false
@@ -67,6 +77,8 @@ class MainActivity : AppCompatActivity() {
         textRate = findViewById(R.id.textRate)
         switchTools = findViewById(R.id.switchTools)
         switchHeadsetMic = findViewById(R.id.switchHeadsetMic)
+        textLog = findViewById(R.id.textLog)
+        findViewById<Button>(R.id.btnClearLog).setOnClickListener { EventLog.clear() }
 
         loadFields()
 
@@ -119,10 +131,12 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         setSwitch(AssistantService.isRunning)
+        logHandler.post(logUpdater)
     }
 
     override fun onPause() {
         super.onPause()
+        logHandler.removeCallbacks(logUpdater)
         saveFields()
     }
 

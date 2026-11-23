@@ -15,6 +15,7 @@ class Speaker(context: Context) {
 
     private val ready = CompletableDeferred<Boolean>()
     private val tts: TextToSpeech = TextToSpeech(context.applicationContext) { status ->
+        EventLog.add(if (status == TextToSpeech.SUCCESS) "Синтез речи: готов" else "Синтез речи: НЕ запустился ($status)")
         ready.complete(status == TextToSpeech.SUCCESS)
     }
 
@@ -41,7 +42,10 @@ class Speaker(context: Context) {
     suspend fun speak(text: String, rate: Float) {
         if (!ready.await()) throw IllegalStateException("синтез речи недоступен")
 
-        tts.setLanguage(Locale.forLanguageTag("ru-RU"))
+        val lang = tts.setLanguage(Locale.forLanguageTag("ru-RU"))
+        if (lang == TextToSpeech.LANG_MISSING_DATA || lang == TextToSpeech.LANG_NOT_SUPPORTED) {
+            EventLog.add("Синтез речи: нет русского голоса (код $lang)")
+        }
         tts.setSpeechRate(rate)
         tts.setAudioAttributes(
             AudioAttributes.Builder()
@@ -55,7 +59,10 @@ class Speaker(context: Context) {
             synchronized(pending) { pending[id] = { if (cont.isActive) cont.resume(Unit) } }
             cont.invokeOnCancellation { tts.stop() }
             val result = tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, id)
-            if (result == TextToSpeech.ERROR) finish(id)
+            if (result == TextToSpeech.ERROR) {
+                EventLog.add("Синтез речи: ошибка воспроизведения")
+                finish(id)
+            }
         }
     }
 

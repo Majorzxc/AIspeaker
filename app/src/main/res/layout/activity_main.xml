@@ -165,6 +165,40 @@
                 android:inputType="number" />
         </com.google.android.material.textfield.TextInputLayout>
 
+        <!-- ===== Слово-триггер ===== -->
+        <TextView
+            style="@style/TextAppearance.Material3.TitleMedium"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:text="Слово-триггер" />
+
+        <com.google.android.material.materialswitch.MaterialSwitch
+            android:id="@+id/switchWake"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Слушать слово-триггер (нужна офлайн-модель)" />
+
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:hint="Слова-триггеры через запятую">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/editWakeWords"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="text" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:alpha="0.7"
+            android:text="Можно сразу: «Гера, какая погода». Или «Гера» — сигнал — вопрос. Слово должно быть обычным русским словом. После изменения перевключите ассистента." />
+
         <!-- ===== Распознавание ===== -->
         <TextView
             style="@style/TextAppearance.Material3.TitleMedium"
@@ -180,6 +214,19 @@
             android:layout_marginTop="4dp"
             android:alpha="0.8"
             android:text="Офлайн-модель: …" />
+
+        <TextView
+            android:id="@+id/textSensitivity"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="Чувствительность микрофона: 60" />
+
+        <SeekBar
+            android:id="@+id/seekSensitivity"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:max="100" />
 
         <Button
             android:id="@+id/btnDownloadModel"

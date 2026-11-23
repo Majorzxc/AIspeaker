@@ -30,6 +30,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 /**
@@ -90,7 +91,7 @@ class AssistantService : Service() {
             ServiceCompat.startForeground(
                 this,
                 NOTIFICATION_ID,
-                buildNotification("Готов. Нажмите кнопку на наушниках."),
+                buildNotification("Готов. Нажмите кнопку на наушниках или скажите слово-триггер."),
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE or ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
             )
         } catch (e: Exception) {
@@ -104,6 +105,7 @@ class AssistantService : Service() {
         setupMediaSession()
         claimMediaButtons()
         isRunning = true
+        startWakeLoop()
         EventLog.add(
             "Сервис запущен. Распознавание: " +
                 if (settings.sttViaApi) "через API (${settings.sttModel})"
@@ -203,43 +205,98 @@ class AssistantService : Service() {
 
     // ---------- Основной сценарий ----------
 
+    private val wake by lazy { WakeWordListener(this) }
+    private var wakeJob: Job? = null
+
+    @Volatile
+    private var busy = false // идёт вопрос-ответ
+
+    /** Фоновое ожидание слова-триггера (если включено в настройках). */
+    private fun startWakeLoop() {
+        if (!settings.wakeWordEnabled || wakeJob?.isActive == true) return
+        if (!VoskEngine.isDownloaded(this)) {
+            EventLog.add("Слово-триггер не работает: офлайн-модель не скачана")
+            return
+        }
+        wakeJob = scope.launch {
+            val words = wake.parseWords(settings.wakeWords)
+            while (isActive) {
+                val heard = try {
+                    wake.awaitWakeWord(words, settings.micSensitivity)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    EventLog.add("Слово-триггер: ошибка ${e.message}")
+                    delay(3000)
+                    continue
+                }
+                runPipeline(heard)
+            }
+        }
+    }
+
     private fun onTrigger() {
         val now = System.currentTimeMillis()
         if (now - lastPress < 500) return // защита от "дребезга" кнопки
         lastPress = now
 
         // Повторное нажатие во время работы — прервать (например, заткнуть длинный ответ)
-        if (job?.isActive == true) {
+        if (busy) {
             EventLog.add("Прервано повторным нажатием")
-            job?.cancel()
             speaker.stop()
+            val j1 = job
+            val j2 = wakeJob
+            j1?.cancel()
+            j2?.cancel()
+            scope.launch {
+                j1?.join()
+                j2?.join()
+                startWakeLoop()
+            }
             return
         }
-        job = scope.launch { runPipeline() }
+
+        // Микрофон занят ожиданием слова-триггера — освобождаем его на время вопроса
+        val waiting = wakeJob
+        waiting?.cancel()
+        job = scope.launch {
+            waiting?.join()
+            runPipeline(null)
+            startWakeLoop()
+        }
     }
 
-    private suspend fun runPipeline() {
+    /**
+     * Вопрос → ответ.
+     * @param heardPcm звук фразы со словом-триггером (в ней может уже быть вопрос) или null при запуске кнопкой.
+     */
+    private suspend fun runPipeline(heardPcm: ByteArray?) {
+        busy = true
         try {
             routing.requestFocus() // музыка на паузу
-            if (settings.useHeadsetMic && !routing.enableHeadsetMic()) {
-                EventLog.add("Микрофон гарнитуры недоступен, слушаю микрофоном телефона")
-            }
-
             beep()
-            delay(250) // чтобы сигнал не попал в запись
-            updateStatus("Слушаю…")
 
-            if (!settings.sttViaApi && !VoskEngine.isDownloaded(this)) {
-                throw IllegalStateException("офлайн-модель не скачана, откройте Геру и нажмите «Скачать»")
-            }
-            val pcm = recorder.recordPhrase(settings.useHeadsetMic)
-            routing.disableHeadsetMic() // ответ — снова в нормальном качестве
-
-            val question = if (pcm == null) null else {
+            var question: String? = null
+            if (heardPcm != null) {
                 updateStatus("Распознаю…")
-                val text = if (settings.sttViaApi) apiStt.transcribe(pcm)
-                           else VoskEngine.transcribe(this, pcm)
-                text.ifBlank { null }
+                val text = transcribe(heardPcm)
+                EventLog.add("Фраза с триггером: $text")
+                question = stripWakeWord(text)
+            }
+
+            // Вопроса ещё нет (нажали кнопку или сказали только "Гера") — слушаем его отдельно
+            if (question == null) {
+                if (settings.useHeadsetMic && !routing.enableHeadsetMic()) {
+                    EventLog.add("Микрофон гарнитуры недоступен, слушаю микрофоном телефона")
+                }
+                delay(250) // чтобы сигнал не попал в запись
+                updateStatus("Слушаю…")
+                val pcm = recorder.recordPhrase(settings.useHeadsetMic, settings.micSensitivity)
+                routing.disableHeadsetMic() // ответ — снова в нормальном качестве
+                question = if (pcm == null) null else {
+                    updateStatus("Распознаю…")
+                    transcribe(pcm).ifBlank { null }
+                }
             }
             EventLog.add("Распознано: ${question ?: "(ничего)"}")
 
@@ -269,10 +326,33 @@ class AssistantService : Service() {
             }
             runCatching { speaker.speak(spoken, settings.speechRate) }
         } finally {
+            busy = false
             routing.disableHeadsetMic()
             routing.abandonFocus() // музыка продолжается
             claimMediaButtons()
         }
+    }
+
+    /** Распознавание записанной фразы выбранным способом (с выравниванием громкости). */
+    private suspend fun transcribe(pcm: ByteArray): String {
+        if (!settings.sttViaApi && !VoskEngine.isDownloaded(this)) {
+            throw IllegalStateException("офлайн-модель не скачана, откройте Геру и нажмите «Скачать»")
+        }
+        val loud = AudioUtil.normalize(pcm)
+        return if (settings.sttViaApi) apiStt.transcribe(loud) else VoskEngine.transcribe(this, loud)
+    }
+
+    /** "Гера, какая погода" -> "какая погода". null — если кроме обращения ничего не сказали. */
+    private fun stripWakeWord(text: String): String? {
+        val trimChars = charArrayOf(' ', ',', '.', '!', '?', '-', '—', ':')
+        val lower = text.lowercase()
+        for (w in wake.parseWords(settings.wakeWords)) {
+            val idx = lower.indexOf(w)
+            if (idx >= 0) return text.substring(idx + w.length).trim(*trimChars).ifBlank { null }
+        }
+        // Слово не нашлось (распознаватель мог записать его иначе): одно слово — считаем это обращением
+        val clean = text.trim(*trimChars)
+        return if (clean.isEmpty() || clean.split(Regex("\\s+")).size <= 1) null else clean
     }
 
     private fun beep() {

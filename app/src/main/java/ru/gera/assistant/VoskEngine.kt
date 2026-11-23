@@ -89,6 +89,9 @@ object VoskEngine {
         }
     }
 
+    /** Модель для других компонентов (слово-триггер). Загружается один раз. */
+    fun model(context: Context): Model = loadModel(context)
+
     private fun loadModel(context: Context): Model {
         model?.let { return it }
         synchronized(this) {

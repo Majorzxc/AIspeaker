@@ -56,6 +56,21 @@ class Settings(context: Context) {
         get() = prefs.getString("stt_model", "whisper-1") ?: "whisper-1"
         set(v) = prefs.edit { putString("stt_model", v.trim().ifEmpty { "whisper-1" }) }
 
+    /** Чувствительность микрофона 0..100: выше — можно говорить тише. */
+    var micSensitivity: Int
+        get() = prefs.getInt("mic_sensitivity", 60)
+        set(v) = prefs.edit { putInt("mic_sensitivity", v.coerceIn(0, 100)) }
+
+    /** Слушать ли постоянно слово-триггер. */
+    var wakeWordEnabled: Boolean
+        get() = prefs.getBoolean("wake_enabled", false)
+        set(v) = prefs.edit { putBoolean("wake_enabled", v) }
+
+    /** Слова/фразы-триггеры через запятую. */
+    var wakeWords: String
+        get() = prefs.getString("wake_words", "гера") ?: "гера"
+        set(v) = prefs.edit { putString("wake_words", v.trim().ifEmpty { "гера" }) }
+
     companion object {
         val DEFAULT_PROMPT = """
             Ты — Гера, голосовой ассистент. Твой ответ будет прочитан вслух в наушник.

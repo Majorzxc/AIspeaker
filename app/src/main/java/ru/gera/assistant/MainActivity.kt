@@ -43,6 +43,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var textModelStatus: TextView
     private lateinit var btnDownloadModel: Button
     private var downloading = false
+    private lateinit var switchWake: MaterialSwitch
+    private lateinit var editWakeWords: EditText
+    private lateinit var seekSensitivity: SeekBar
+    private lateinit var textSensitivity: TextView
 
     // Обновление журнала на экране раз в 0,7 с, пока экран открыт
     private val logHandler = android.os.Handler(android.os.Looper.getMainLooper())
@@ -88,6 +92,19 @@ class MainActivity : AppCompatActivity() {
         textModelStatus = findViewById(R.id.textModelStatus)
         btnDownloadModel = findViewById(R.id.btnDownloadModel)
         btnDownloadModel.setOnClickListener { downloadModel() }
+        switchWake = findViewById(R.id.switchWake)
+        editWakeWords = findViewById(R.id.editWakeWords)
+        seekSensitivity = findViewById(R.id.seekSensitivity)
+        textSensitivity = findViewById(R.id.textSensitivity)
+        seekSensitivity.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
+                textSensitivity.text = "Чувствительность микрофона: $progress"
+            }
+            override fun onStartTrackingTouch(sb: SeekBar?) {}
+            override fun onStopTrackingTouch(sb: SeekBar?) {
+                settings.micSensitivity = seekSensitivity.progress // применяется сразу, без перезапуска
+            }
+        })
         findViewById<Button>(R.id.btnClearLog).setOnClickListener { EventLog.clear() }
 
         loadFields()
@@ -208,6 +225,10 @@ class MainActivity : AppCompatActivity() {
         switchHeadsetMic.isChecked = settings.useHeadsetMic
         switchSttApi.isChecked = settings.sttViaApi
         editSttModel.setText(settings.sttModel)
+        switchWake.isChecked = settings.wakeWordEnabled
+        editWakeWords.setText(settings.wakeWords)
+        seekSensitivity.progress = settings.micSensitivity
+        textSensitivity.text = "Чувствительность микрофона: ${settings.micSensitivity}"
         showModelStatus()
         // Шкала 0..30 соответствует скорости 0.5..2.0 с шагом 0.05
         seekRate.progress = ((settings.speechRate - 0.5f) / 0.05f).toInt().coerceIn(0, 30)
@@ -226,6 +247,9 @@ class MainActivity : AppCompatActivity() {
         settings.useHeadsetMic = switchHeadsetMic.isChecked
         settings.sttViaApi = switchSttApi.isChecked
         settings.sttModel = editSttModel.text.toString()
+        settings.wakeWordEnabled = switchWake.isChecked
+        settings.wakeWords = editWakeWords.text.toString()
+        settings.micSensitivity = seekSensitivity.progress
     }
 
     // ---------- Офлайн-модель ----------

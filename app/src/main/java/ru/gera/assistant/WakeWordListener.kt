@@ -30,8 +30,21 @@ class WakeWordListener(private val context: Context) {
             .filter { it.isNotEmpty() }
             .ifEmpty { listOf("гера") }
 
-    /** Блокируется, пока не услышит слово-триггер. Возвращает звук фразы, в которой оно прозвучало. */
-    suspend fun awaitWakeWord(words: List<String>, sensitivity: Int): ByteArray = withContext(Dispatchers.IO) {
+    /** Что услышали. */
+    sealed class Event(val pcm: ByteArray) {
+        /** Vosk уверенно услышал слово-триггер. */
+        class Hit(pcm: ByteArray) : Event(pcm)
+        /** Короткая фраза (возможно, шёпот) — её нужно проверить через API. */
+        class Candidate(pcm: ByteArray) : Event(pcm)
+    }
+
+    private var lastCandidateAt = 0L
+
+    /**
+     * Блокируется, пока не услышит слово-триггер.
+     * @param whisperMode дополнительно отдавать короткие фразы на проверку через API (для шёпота)
+     */
+    suspend fun awaitWakeWord(words: List<String>, sensitivity: Int, whisperMode: Boolean): Event = withContext(Dispatchers.IO) {
         val model = VoskEngine.model(context)
 
         // Словарь: отдельные слова из всех фраз + [unk]
@@ -51,6 +64,15 @@ class WakeWordListener(private val context: Context) {
         val buf = ShortArray(AudioUtil.CHUNK)
         val phrase = ArrayDeque<ByteArray>()
 
+        // Простой детектор речи для режима шёпота (по громкости, без усиления)
+        var noise = 0.0
+        var noiseChunks = 0
+        val preRoll = ArrayDeque<ByteArray>()
+        val segment = ByteArrayOutputStream()
+        var inSegment = false
+        var segmentMs = 0
+        var silenceMs = 0
+
         record.startRecording()
         EventLog.add("Жду слово-триггер: ${words.joinToString(" / ")}")
         try {
@@ -58,6 +80,46 @@ class WakeWordListener(private val context: Context) {
                 ensureActive()
                 val n = record.read(buf, 0, AudioUtil.CHUNK)
                 if (n <= 0) throw IllegalStateException("ошибка чтения микрофона ($n)")
+
+                if (whisperMode) {
+                    val level = AudioUtil.rms(buf, n)
+                    val raw = AudioUtil.toBytes(buf, n)
+                    if (noiseChunks < 5) {
+                        noise = (noise * noiseChunks + level) / (noiseChunks + 1)
+                        noiseChunks++
+                    } else {
+                        val threshold = AudioUtil.speechThreshold(noise, sensitivity)
+                        val loud = level > threshold
+                        if (!inSegment) {
+                            // Медленно подстраиваемся под фоновый шум
+                            if (!loud) noise = noise * 0.97 + level * 0.03
+                            preRoll.addLast(raw)
+                            if (preRoll.size > 3) preRoll.removeFirst()
+                            if (loud) {
+                                inSegment = true
+                                segment.reset()
+                                preRoll.forEach { segment.write(it) }
+                                segmentMs = preRoll.size * 100
+                                silenceMs = 0
+                            }
+                        } else {
+                            segment.write(raw)
+                            segmentMs += 100
+                            silenceMs = if (loud) 0 else silenceMs + 100
+                            if (segmentMs > 6000) {
+                                inSegment = false // слишком длинная речь — это не обращение
+                            } else if (silenceMs >= 700) {
+                                inSegment = false
+                                val speechMs = segmentMs - silenceMs
+                                val now = System.currentTimeMillis()
+                                if (speechMs in 400..5000 && now - lastCandidateAt > 2500) {
+                                    lastCandidateAt = now
+                                    return@withContext Event.Candidate(segment.toByteArray())
+                                }
+                            }
+                        }
+                    }
+                }
 
                 val chunk = AudioUtil.toBytes(buf, n, gain)
                 phrase.addLast(chunk)
@@ -68,12 +130,12 @@ class WakeWordListener(private val context: Context) {
                     if (containsWakeWord(rec.result, words, minConfidence)) {
                         val out = ByteArrayOutputStream()
                         phrase.forEach { out.write(it) }
-                        return@withContext out.toByteArray()
+                        return@withContext Event.Hit(out.toByteArray())
                     }
                     phrase.clear()
                 }
             }
-            ByteArray(0) // сюда не доходим: выход из цикла только через return или исключение
+            Event.Hit(ByteArray(0)) // сюда не доходим: выход из цикла только через return или исключение
         } finally {
             runCatching { record.stop() }
             record.release()

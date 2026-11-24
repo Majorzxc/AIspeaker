@@ -75,6 +75,11 @@ class Settings(context: Context) {
         get() = prefs.getBoolean("wake_enabled", false)
         set(v) = prefs.edit { putBoolean("wake_enabled", v) }
 
+    /** Проверять короткие фразы через API, чтобы триггер срабатывал и на шёпот. */
+    var whisperWake: Boolean
+        get() = prefs.getBoolean("whisper_wake", false)
+        set(v) = prefs.edit { putBoolean("whisper_wake", v) }
+
     /** Слова/фразы-триггеры через запятую. */
     var wakeWords: String
         get() = prefs.getString("wake_words", "гера") ?: "гера"

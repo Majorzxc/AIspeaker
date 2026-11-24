@@ -46,6 +46,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnDownloadModel: Button
     private var downloading = false
     private lateinit var switchWake: MaterialSwitch
+    private lateinit var switchWhisperWake: MaterialSwitch
     private lateinit var editWakeWords: EditText
     private lateinit var seekSensitivity: SeekBar
     private lateinit var textSensitivity: TextView
@@ -97,6 +98,8 @@ class MainActivity : AppCompatActivity() {
         btnDownloadModel = findViewById(R.id.btnDownloadModel)
         btnDownloadModel.setOnClickListener { downloadModel() }
         switchWake = findViewById(R.id.switchWake)
+        switchWhisperWake = findViewById(R.id.switchWhisperWake)
+        findViewById<Button>(R.id.btnDefaultAssistant).setOnClickListener { openAssistantSettings() }
         editWakeWords = findViewById(R.id.editWakeWords)
         seekSensitivity = findViewById(R.id.seekSensitivity)
         textSensitivity = findViewById(R.id.textSensitivity)
@@ -232,6 +235,7 @@ class MainActivity : AppCompatActivity() {
         editSttBaseUrl.setText(settings.sttBaseUrl)
         editSttApiKey.setText(settings.sttApiKey)
         switchWake.isChecked = settings.wakeWordEnabled
+        switchWhisperWake.isChecked = settings.whisperWake
         editWakeWords.setText(settings.wakeWords)
         seekSensitivity.progress = settings.micSensitivity
         textSensitivity.text = "Чувствительность микрофона: ${settings.micSensitivity}"
@@ -256,8 +260,25 @@ class MainActivity : AppCompatActivity() {
         settings.sttBaseUrl = editSttBaseUrl.text.toString()
         settings.sttApiKey = editSttApiKey.text.toString()
         settings.wakeWordEnabled = switchWake.isChecked
+        settings.whisperWake = switchWhisperWake.isChecked
         settings.wakeWords = editWakeWords.text.toString()
         settings.micSensitivity = seekSensitivity.progress
+    }
+
+    /** Открывает настройки помощника по умолчанию (на разных прошивках — разные экраны). */
+    private fun openAssistantSettings() {
+        val candidates = listOf(
+            Intent(android.provider.Settings.ACTION_VOICE_INPUT_SETTINGS),
+            Intent(android.provider.Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS),
+            Intent(android.provider.Settings.ACTION_SETTINGS)
+        )
+        for (intent in candidates) {
+            try {
+                startActivity(intent)
+                return
+            } catch (_: Exception) {
+            }
+        }
     }
 
     // ---------- Офлайн-модель ----------

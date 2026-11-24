@@ -40,6 +40,19 @@
             android:layout_marginTop="8dp"
             android:text="Спросить сейчас" />
 
+        <Button
+            android:id="@+id/btnDefaultAssistant"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Сделать Геру помощником по умолчанию" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:alpha="0.7"
+            android:text="Нужно, если касание наушников вызывает голосового помощника: выберите Геру в «Помощник и голосовой ввод». Если при касании появится выбор приложения — выберите Геру и «Всегда»." />
+
         <!-- ===== Журнал ===== -->
         <LinearLayout
             android:layout_width="match_parent"
@@ -178,6 +191,18 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="Слушать слово-триггер (нужна офлайн-модель)" />
+
+        <com.google.android.material.materialswitch.MaterialSwitch
+            android:id="@+id/switchWhisperWake"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Триггер шёпотом (через API)" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:alpha="0.7"
+            android:text="Каждая короткая фраза рядом с вами отправляется в API распознавания и тратит лимит запросов. Работает только при включённом «Распознавать через API»." />
 
         <com.google.android.material.textfield.TextInputLayout
             android:layout_width="match_parent"

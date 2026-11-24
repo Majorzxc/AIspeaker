@@ -220,9 +220,13 @@ class AssistantService : Service() {
         }
         wakeJob = scope.launch {
             val words = wake.parseWords(settings.wakeWords)
+            val whisperMode = settings.whisperWake && settings.sttViaApi
+            if (settings.whisperWake && !settings.sttViaApi) {
+                EventLog.add("Триггер шёпотом работает только с распознаванием через API")
+            }
             while (isActive) {
                 val heard = try {
-                    wake.awaitWakeWord(words, settings.micSensitivity)
+                    wake.awaitWakeWord(words, settings.micSensitivity, whisperMode)
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
@@ -230,7 +234,27 @@ class AssistantService : Service() {
                     delay(3000)
                     continue
                 }
-                runPipeline(heard)
+                when (heard) {
+                    is WakeWordListener.Event.Hit -> runPipeline(heard.pcm)
+                    is WakeWordListener.Event.Candidate -> {
+                        // Проверяем через API, было ли в этой фразе слово-триггер
+                        val text = try {
+                            transcribe(heard.pcm)
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            EventLog.add("Проверка шёпота: ошибка ${e.message}")
+                            delay(3000)
+                            continue
+                        }
+                        if (findWakeWord(text) != null) {
+                            EventLog.add("Триггер шёпотом: «$text»")
+                            runPipeline(null, heardText = text)
+                        } else if (text.isNotBlank()) {
+                            EventLog.add("Не триггер: «${text.take(40)}»")
+                        }
+                    }
+                }
             }
         }
     }
@@ -270,14 +294,16 @@ class AssistantService : Service() {
      * Вопрос → ответ.
      * @param heardPcm звук фразы со словом-триггером (в ней может уже быть вопрос) или null при запуске кнопкой.
      */
-    private suspend fun runPipeline(heardPcm: ByteArray?) {
+    private suspend fun runPipeline(heardPcm: ByteArray?, heardText: String? = null) {
         busy = true
         try {
             routing.requestFocus() // музыка на паузу
             beep()
 
             var question: String? = null
-            if (heardPcm != null) {
+            if (heardText != null) {
+                question = stripWakeWord(heardText)
+            } else if (heardPcm != null) {
                 updateStatus("Распознаю…")
                 val text = transcribe(heardPcm)
                 EventLog.add("Фраза с триггером: $text")
@@ -344,20 +370,27 @@ class AssistantService : Service() {
 
     /** "Гера, какая погода" -> "какая погода". null — если кроме обращения ничего не сказали. */
     private fun stripWakeWord(text: String): String? {
-        // Разбиваем на слова с позициями: ищем триггер только целыми словами ("два" ≠ "дважды")
+        val after = findWakeWord(text)
+        if (after != null) return text.substring(after).trim(' ', ',', '.', '!', '?', '-', '—', ':').ifBlank { null }
+        // Слово не нашлось (распознаватель мог записать его иначе): одно слово — считаем это обращением
+        val tokens = Regex("[\\p{L}\\p{N}]+").findAll(text).count()
+        return if (tokens <= 1) null else text.trim()
+    }
+
+    /** Ищет слово-триггер целыми словами ("два" ≠ "дважды"). Возвращает позицию сразу после него или null. */
+    private fun findWakeWord(text: String): Int? {
         val tokens = Regex("[\\p{L}\\p{N}]+").findAll(text).toList()
-        val lower = tokens.map { it.value.lowercase() }
+        // ё/е не различаем — Whisper пишет по-разному
+        val lower = tokens.map { it.value.lowercase().replace('ё', 'е') }
         for (w in wake.parseWords(settings.wakeWords)) {
-            val parts = w.split(' ')
+            val parts = w.replace('ё', 'е').split(' ')
             for (start in 0..lower.size - parts.size) {
                 if (lower.subList(start, start + parts.size) == parts) {
-                    val after = tokens[start + parts.size - 1].range.last + 1
-                    return text.substring(after).trim(' ', ',', '.', '!', '?', '-', '—', ':').ifBlank { null }
+                    return tokens[start + parts.size - 1].range.last + 1
                 }
             }
         }
-        // Слово не нашлось (распознаватель мог записать его иначе): одно слово — считаем это обращением
-        return if (tokens.size <= 1) null else text.trim()
+        return null
     }
 
     private fun beep() {

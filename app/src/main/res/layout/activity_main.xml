@@ -361,6 +361,13 @@
             android:layout_height="wrap_content"
             android:text="Проверить микрофон (запись 4 с и повтор)" />
 
+        <Button
+            android:id="@+id/btnPlayLast"
+            style="@style/Widget.Material3.Button.TonalButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Прослушать последний запрос" />
+
         <!-- ===== Погода ===== -->
         <TextView
             style="@style/TextAppearance.Material3.TitleMedium"

@@ -92,6 +92,11 @@ class MainActivity : AppCompatActivity() {
         spinnerMic.adapter = android.widget.ArrayAdapter(
             this, android.R.layout.simple_spinner_dropdown_item, AudioUtil.MIC_CHOICES.map { it.second }
         )
+        findViewById<Button>(R.id.btnPlayLast).setOnClickListener {
+            if (AssistantService.isRunning) {
+                startService(Intent(this, AssistantService::class.java).setAction(AssistantService.ACTION_PLAY_LAST))
+            }
+        }
         findViewById<Button>(R.id.btnMicTest).setOnClickListener {
             if (!AssistantService.isRunning) {
                 Toast.makeText(this, "Сначала включите ассистента", Toast.LENGTH_SHORT).show()

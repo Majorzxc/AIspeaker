@@ -47,6 +47,19 @@ class AssistantService : Service() {
         const val ACTION_STOP = "ru.gera.assistant.STOP"
         const val ACTION_ASK = "ru.gera.assistant.ASK"
         const val ACTION_MIC_TEST = "ru.gera.assistant.MIC_TEST"
+        const val ACTION_PLAY_LAST = "ru.gera.assistant.PLAY_LAST"
+
+        /** Кнопки гарнитуры, которые запускают Геру. */
+        val HEADSET_KEYS = setOf(
+            KeyEvent.KEYCODE_HEADSETHOOK,
+            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
+            KeyEvent.KEYCODE_MEDIA_PLAY,
+            KeyEvent.KEYCODE_MEDIA_PAUSE
+        )
+
+        /** Звук последнего запроса — ровно то, что ушло на распознавание. */
+        @Volatile
+        var lastRequestPcm: ByteArray? = null
 
         @Volatile
         var isRunning = false
@@ -107,6 +120,13 @@ class AssistantService : Service() {
         claimMediaButtons()
         isRunning = true
         startWakeLoop()
+        // Раз в 2 минуты незаметно "напоминаем" Android, что кнопки наушников — наши
+        scope.launch {
+            while (isActive) {
+                delay(120_000)
+                if (!busy) claimMediaButtons()
+            }
+        }
         EventLog.add(
             "Сервис запущен. Распознавание: " +
                 if (settings.sttViaApi) "через API (${settings.sttModel})"
@@ -118,6 +138,7 @@ class AssistantService : Service() {
         when (intent?.action) {
             ACTION_STOP -> stopSelf()
             ACTION_MIC_TEST -> micTest()
+            ACTION_PLAY_LAST -> playLastRequest()
             ACTION_ASK -> {
                 EventLog.add("Нажата кнопка «Спросить»")
                 onTrigger()
@@ -150,12 +171,7 @@ class AssistantService : Service() {
                     mediaButtonIntent.getParcelableExtra<KeyEvent>(Intent.EXTRA_KEY_EVENT)
                 }) ?: return false
 
-                val ours = event.keyCode in setOf(
-                    KeyEvent.KEYCODE_HEADSETHOOK,
-                    KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
-                    KeyEvent.KEYCODE_MEDIA_PLAY,
-                    KeyEvent.KEYCODE_MEDIA_PAUSE
-                )
+                val ours = event.keyCode in HEADSET_KEYS
                 EventLog.add("Кнопка гарнитуры: код ${event.keyCode}, действие ${event.action}")
                 if (!ours) return false
                 if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) onTrigger()
@@ -169,6 +185,18 @@ class AssistantService : Service() {
                 .setState(PlaybackState.STATE_PLAYING, 0, 1f)
                 .build()
         )
+        // Запасной путь: если Android перестанет считать нас плеером, кнопка придёт в MediaButtonReceiver
+        val receiver = android.content.ComponentName(this, MediaButtonReceiver::class.java)
+        if (Build.VERSION.SDK_INT >= 31) {
+            session.setMediaButtonBroadcastReceiver(receiver)
+        } else {
+            @Suppress("DEPRECATION")
+            session.setMediaButtonReceiver(
+                PendingIntent.getBroadcast(
+                    this, 3, Intent(Intent.ACTION_MEDIA_BUTTON).setComponent(receiver), PendingIntent.FLAG_IMMUTABLE
+                )
+            )
+        }
         session.isActive = true
     }
 
@@ -292,6 +320,20 @@ class AssistantService : Service() {
         }
     }
 
+    /** Проиграть звук последнего запроса — чтобы услышать, что именно ушло на распознавание. */
+    private fun playLastRequest() {
+        val pcm = lastRequestPcm
+        if (pcm == null) {
+            EventLog.add("Запросов ещё не было")
+            return
+        }
+        if (busy) return
+        scope.launch {
+            EventLog.add("Воспроизвожу последний запрос (${pcm.size / 32000.0} с)")
+            Earcons.playPcm(pcm, AudioUtil.SAMPLE_RATE)
+        }
+    }
+
     /** Проверка микрофона: записать 4 секунды и проиграть обратно. */
     private fun micTest() {
         if (busy) return
@@ -405,6 +447,7 @@ class AssistantService : Service() {
             throw IllegalStateException("офлайн-модель не скачана, откройте Геру и нажмите «Скачать»")
         }
         val loud = AudioUtil.normalize(pcm)
+        lastRequestPcm = loud
         val text = if (settings.sttViaApi) apiStt.transcribe(loud) else VoskEngine.transcribe(this, loud)
         if (isHallucination(text)) {
             EventLog.add("Отброшено как шум: «$text»")

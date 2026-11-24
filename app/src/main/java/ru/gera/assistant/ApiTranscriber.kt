@@ -26,8 +26,7 @@ class ApiTranscriber(private val settings: Settings) {
         field("model", settings.sttModel)
         field("language", "ru")
         field("response_format", "json")
-        // Подсказка модели: что за речь ожидается (помогает с тихой речью и шёпотом)
-        field("prompt", "Короткий вопрос голосовому ассистенту, возможно шёпотом.")
+        field("temperature", "0") // меньше "фантазий" на нечётком звуке
         body.write(
             ("--$boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"audio.wav\"\r\n" +
                 "Content-Type: audio/wav\r\n\r\n").toByteArray()

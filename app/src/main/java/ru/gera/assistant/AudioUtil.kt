@@ -111,7 +111,7 @@ object AudioUtil {
      * Выравнивает громкость всей фразы: тихую запись поднимает до нормального уровня.
      * Распознаватели заметно лучше работают с нормально громким звуком.
      */
-    fun normalize(pcm: ByteArray, maxGain: Double = 12.0): ByteArray {
+    fun normalize(pcm: ByteArray, maxGain: Double = 6.0): ByteArray {
         val n = pcm.size / 2
         if (n == 0) return pcm
         var peak = 1

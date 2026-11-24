@@ -14,12 +14,16 @@ class VoiceRecorder(private val context: android.content.Context) {
     companion object {
         const val SAMPLE_RATE = AudioUtil.SAMPLE_RATE
         private const val CHUNK = AudioUtil.CHUNK
-        private const val SILENCE_TO_STOP_MS = 1200         // пауза, после которой считаем фразу законченной
-        private const val WAIT_FOR_SPEECH_MS = 6000         // сколько ждать начала речи
+        private const val SILENCE_TO_STOP_MS = 1500         // пауза, после которой считаем фразу законченной
+        private const val WAIT_FOR_SPEECH_MS = 8000         // сколько ждать начала речи
         private const val MAX_PHRASE_MS = 15000             // максимальная длина фразы
     }
 
-    /** Возвращает PCM 16 бит, 16 кГц, моно — или null, если речи не было. */
+    /**
+     * Возвращает PCM 16 бит, 16 кГц, моно — или null, если речи не было.
+     * Пишем ВСЁ с момента сигнала: детектор речи решает только, когда фраза закончилась.
+     * (Раньше начало выбрасывалось, пока детектор не "заметит" речь, — и терялись слова.)
+     */
     suspend fun recordPhrase(micChoice: String, sensitivity: Int): ByteArray? = withContext(Dispatchers.IO) {
         val record = AudioUtil.openMic(context, micChoice)
 
@@ -31,8 +35,8 @@ class VoiceRecorder(private val context: android.content.Context) {
         var speechStarted = false
         var silenceMs = 0
         var elapsedMs = 0
-        // Немного звука до начала речи, чтобы не обрезать первый слог
-        val preRoll = ArrayDeque<ByteArray>()
+        var maxLevel = 0.0
+        var threshold = 0.0
 
         record.startRecording()
         try {
@@ -43,36 +47,28 @@ class VoiceRecorder(private val context: android.content.Context) {
                 if (n <= 0) throw IllegalStateException("ошибка чтения микрофона ($n)")
                 elapsedMs += 100
 
-                val chunk = AudioUtil.toBytes(buf, n)
                 val level = AudioUtil.rms(buf, n)
+                out.write(AudioUtil.toBytes(buf, n))
+                maxLevel = maxOf(maxLevel, level)
 
-                // Первые 300 мс — замеряем фоновый шум
                 // Первые 300 мс — замеряем фон. Берём минимум, а не среднее:
                 // если человек заговорил сразу, его речь не испортит оценку шума
                 if (noiseChunks < 3) {
                     noise = if (noiseChunks == 0) level else minOf(noise, level)
                     noiseChunks++
-                    preRoll.addLast(chunk)
                     continue
                 }
-                val threshold = AudioUtil.speechThreshold(noise, sensitivity)
+                threshold = AudioUtil.speechThreshold(noise, sensitivity)
 
                 if (!speechStarted) {
                     if (level > threshold) {
                         speechStarted = true
                         EventLog.add("Слышу речь…")
-                        preRoll.forEach { out.write(it) }
-                        out.write(chunk)
-                    } else {
-                        preRoll.addLast(chunk)
-                        if (preRoll.size > 4) preRoll.removeFirst()
-                        if (elapsedMs > WAIT_FOR_SPEECH_MS) {
-                            EventLog.add("Речь не услышана (шум ${noise.toInt()}, порог ${threshold.toInt()})")
-                            return@withContext null
-                        }
+                    } else if (elapsedMs > WAIT_FOR_SPEECH_MS) {
+                        EventLog.add("Речь не услышана (шум ${noise.toInt()}, порог ${threshold.toInt()}, макс ${maxLevel.toInt()})")
+                        return@withContext null
                     }
                 } else {
-                    out.write(chunk)
                     silenceMs = if (level > threshold) 0 else silenceMs + 100
                     if (silenceMs >= SILENCE_TO_STOP_MS || elapsedMs > MAX_PHRASE_MS) break
                 }
@@ -81,8 +77,16 @@ class VoiceRecorder(private val context: android.content.Context) {
             runCatching { record.stop() }
             record.release()
         }
-        EventLog.add("Фраза записана (${out.size() / (SAMPLE_RATE * 2 / 10) / 10.0} с)")
-        out.toByteArray()
+
+        // Обрезаем хвост тишины, оставляя 300 мс
+        val bytesPerMs = SAMPLE_RATE * 2 / 1000
+        val keep = (out.size() - maxOf(0, silenceMs - 300) * bytesPerMs).coerceAtLeast(0)
+        val pcm = out.toByteArray().copyOf(keep)
+        EventLog.add(
+            "Фраза записана (${pcm.size / bytesPerMs / 100 / 10.0} с; шум ${noise.toInt()}, " +
+                "порог ${threshold.toInt()}, макс ${maxLevel.toInt()})"
+        )
+        pcm
     }
 
     /** Просто записывает [ms] миллисекунд — для проверки микрофона. */

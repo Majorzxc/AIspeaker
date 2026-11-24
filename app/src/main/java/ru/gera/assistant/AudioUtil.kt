@@ -3,6 +3,7 @@ package ru.gera.assistant
 import android.annotation.SuppressLint
 import android.media.AudioFormat
 import android.media.AudioRecord
+import android.media.AudioDeviceInfo
 import android.media.MediaRecorder
 import android.media.audiofx.AutomaticGainControl
 import android.media.audiofx.NoiseSuppressor
@@ -26,9 +27,22 @@ object AudioUtil {
         return maxOf(noiseLevel * multiplier, minLevel)
     }
 
-    /** Открывает микрофон и включает автоусиление/шумоподавление, если телефон их умеет. */
+    /** Варианты выбора микрофона: ключ -> название для экрана. */
+    val MIC_CHOICES = listOf(
+        "builtin" to "Микрофон телефона",
+        "bluetooth" to "Bluetooth-гарнитура (режим звонка)",
+        "wired" to "Проводная / USB-гарнитура",
+        "auto" to "Авто (как решит Android)"
+    )
+
+    /**
+     * Открывает выбранный микрофон и включает шумоподавление, если телефон его умеет.
+     * Автоусиление (AGC) не включаем: в тишине оно "раздувает" шум,
+     * а громкость фразы мы и так выравниваем сами перед распознаванием.
+     */
     @SuppressLint("MissingPermission")
-    fun openMic(useHeadset: Boolean): AudioRecord {
+    fun openMic(context: android.content.Context, choice: String): AudioRecord {
+        val useHeadset = choice == "bluetooth"
         val minBuf = AudioRecord.getMinBufferSize(
             SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT
         )
@@ -43,10 +57,37 @@ object AudioUtil {
             record.release()
             throw IllegalStateException("микрофон недоступен")
         }
+        // Просим Android использовать конкретный микрофон
+        val am = context.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
+        val wanted = when (choice) {
+            "builtin" -> listOf(AudioDeviceInfo.TYPE_BUILTIN_MIC)
+            "wired" -> listOf(AudioDeviceInfo.TYPE_WIRED_HEADSET, AudioDeviceInfo.TYPE_USB_HEADSET, AudioDeviceInfo.TYPE_USB_DEVICE)
+            "bluetooth" -> listOf(AudioDeviceInfo.TYPE_BLUETOOTH_SCO)
+            else -> emptyList()
+        }
+        if (wanted.isNotEmpty()) {
+            val device = am.getDevices(android.media.AudioManager.GET_DEVICES_INPUTS).firstOrNull { it.type in wanted }
+            if (device != null) record.setPreferredDevice(device)
+            else EventLog.add("Выбранный микрофон не найден, использую стандартный")
+        }
+
         val id = record.audioSessionId
-        if (AutomaticGainControl.isAvailable()) runCatching { AutomaticGainControl.create(id)?.enabled = true }
+        if (AutomaticGainControl.isAvailable()) runCatching { AutomaticGainControl.create(id)?.enabled = false }
         if (NoiseSuppressor.isAvailable()) runCatching { NoiseSuppressor.create(id)?.enabled = true }
         return record
+    }
+
+    /** Название микрофона, через который реально идёт запись (вызывать после startRecording). */
+    fun routedName(record: AudioRecord): String {
+        val d = record.routedDevice ?: return "неизвестно"
+        val type = when (d.type) {
+            AudioDeviceInfo.TYPE_BUILTIN_MIC -> "телефон"
+            AudioDeviceInfo.TYPE_BLUETOOTH_SCO -> "Bluetooth"
+            AudioDeviceInfo.TYPE_WIRED_HEADSET -> "проводная гарнитура"
+            AudioDeviceInfo.TYPE_USB_HEADSET, AudioDeviceInfo.TYPE_USB_DEVICE -> "USB"
+            else -> "тип ${d.type}"
+        }
+        return "$type (${d.productName})"
     }
 
     fun rms(buf: ShortArray, n: Int): Double {

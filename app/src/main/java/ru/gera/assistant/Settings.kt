@@ -42,10 +42,15 @@ class Settings(context: Context) {
         get() = prefs.getBoolean("tools_enabled", true)
         set(v) = prefs.edit { putBoolean("tools_enabled", v) }
 
-    /** Слушать микрофон Bluetooth-гарнитуры вместо микрофона телефона (экспериментально). */
-    var useHeadsetMic: Boolean
-        get() = prefs.getBoolean("headset_mic", false)
-        set(v) = prefs.edit { putBoolean("headset_mic", v) }
+    /** Какой микрофон слушать: auto, builtin, bluetooth, wired. */
+    var micChoice: String
+        get() = prefs.getString("mic_choice", null)
+            ?: if (prefs.getBoolean("headset_mic", false)) "bluetooth" else "builtin"
+        set(v) = prefs.edit { putString("mic_choice", v) }
+
+    /** Микрофон Bluetooth-гарнитуры (переводит наушники в режим звонка). */
+    val useHeadsetMic: Boolean
+        get() = micChoice == "bluetooth"
 
     /** true — распознавать через API (/audio/transcriptions), false — офлайн Vosk. */
     var sttViaApi: Boolean

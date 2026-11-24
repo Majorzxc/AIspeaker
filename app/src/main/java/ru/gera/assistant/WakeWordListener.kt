@@ -44,7 +44,7 @@ class WakeWordListener(private val context: Context) {
      * Блокируется, пока не услышит слово-триггер.
      * @param whisperMode дополнительно отдавать короткие фразы на проверку через API (для шёпота)
      */
-    suspend fun awaitWakeWord(words: List<String>, sensitivity: Int, whisperMode: Boolean): Event = withContext(Dispatchers.IO) {
+    suspend fun awaitWakeWord(words: List<String>, sensitivity: Int, whisperMode: Boolean, micChoice: String): Event = withContext(Dispatchers.IO) {
         val model = VoskEngine.model(context)
 
         // Словарь: отдельные слова из всех фраз + [unk]
@@ -60,7 +60,8 @@ class WakeWordListener(private val context: Context) {
         val minConfidence = 0.85 - 0.35 * s
         val gain = 1.0 + 3.0 * s
 
-        val record = AudioUtil.openMic(useHeadset = false)
+        // Bluetooth-микрофон для постоянного прослушивания не берём: он держит наушники в режиме звонка
+        val record = AudioUtil.openMic(context, if (micChoice == "bluetooth") "builtin" else micChoice)
         val buf = ShortArray(AudioUtil.CHUNK)
         val phrase = ArrayDeque<ByteArray>()
 

@@ -36,7 +36,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var seekRate: SeekBar
     private lateinit var textRate: TextView
     private lateinit var switchTools: MaterialSwitch
-    private lateinit var switchHeadsetMic: MaterialSwitch
+    private lateinit var spinnerMic: android.widget.Spinner
     private lateinit var textLog: TextView
     private lateinit var switchSttApi: MaterialSwitch
     private lateinit var editSttModel: EditText
@@ -88,7 +88,18 @@ class MainActivity : AppCompatActivity() {
         seekRate = findViewById(R.id.seekRate)
         textRate = findViewById(R.id.textRate)
         switchTools = findViewById(R.id.switchTools)
-        switchHeadsetMic = findViewById(R.id.switchHeadsetMic)
+        spinnerMic = findViewById(R.id.spinnerMic)
+        spinnerMic.adapter = android.widget.ArrayAdapter(
+            this, android.R.layout.simple_spinner_dropdown_item, AudioUtil.MIC_CHOICES.map { it.second }
+        )
+        findViewById<Button>(R.id.btnMicTest).setOnClickListener {
+            if (!AssistantService.isRunning) {
+                Toast.makeText(this, "Сначала включите ассистента", Toast.LENGTH_SHORT).show()
+            } else {
+                saveFields()
+                startService(Intent(this, AssistantService::class.java).setAction(AssistantService.ACTION_MIC_TEST))
+            }
+        }
         textLog = findViewById(R.id.textLog)
         switchSttApi = findViewById(R.id.switchSttApi)
         editSttModel = findViewById(R.id.editSttModel)
@@ -229,7 +240,7 @@ class MainActivity : AppCompatActivity() {
         editMaxTokens.setText(settings.maxTokens.toString())
         editCity.setText(settings.city)
         switchTools.isChecked = settings.toolsEnabled
-        switchHeadsetMic.isChecked = settings.useHeadsetMic
+        spinnerMic.setSelection(AudioUtil.MIC_CHOICES.indexOfFirst { it.first == settings.micChoice }.coerceAtLeast(0))
         switchSttApi.isChecked = settings.sttViaApi
         editSttModel.setText(settings.sttModel)
         editSttBaseUrl.setText(settings.sttBaseUrl)
@@ -254,7 +265,7 @@ class MainActivity : AppCompatActivity() {
         settings.city = editCity.text.toString()
         settings.speechRate = currentRate()
         settings.toolsEnabled = switchTools.isChecked
-        settings.useHeadsetMic = switchHeadsetMic.isChecked
+        settings.micChoice = AudioUtil.MIC_CHOICES.getOrNull(spinnerMic.selectedItemPosition)?.first ?: "builtin"
         settings.sttViaApi = switchSttApi.isChecked
         settings.sttModel = editSttModel.text.toString()
         settings.sttBaseUrl = editSttBaseUrl.text.toString()

@@ -46,6 +46,7 @@ class AssistantService : Service() {
         private const val NOTIFICATION_ID = 1
         const val ACTION_STOP = "ru.gera.assistant.STOP"
         const val ACTION_ASK = "ru.gera.assistant.ASK"
+        const val ACTION_MIC_TEST = "ru.gera.assistant.MIC_TEST"
 
         @Volatile
         var isRunning = false
@@ -64,7 +65,7 @@ class AssistantService : Service() {
     private val mainHandler = Handler(Looper.getMainLooper())
 
     private lateinit var settings: Settings
-    private val recorder = VoiceRecorder()
+    private val recorder by lazy { VoiceRecorder(this) }
     private lateinit var apiStt: ApiTranscriber
     private lateinit var speaker: Speaker
     private lateinit var llm: LlmClient
@@ -116,6 +117,7 @@ class AssistantService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> stopSelf()
+            ACTION_MIC_TEST -> micTest()
             ACTION_ASK -> {
                 EventLog.add("Нажата кнопка «Спросить»")
                 onTrigger()
@@ -226,7 +228,7 @@ class AssistantService : Service() {
             }
             while (isActive) {
                 val heard = try {
-                    wake.awaitWakeWord(words, settings.micSensitivity, whisperMode)
+                    wake.awaitWakeWord(words, settings.micSensitivity, whisperMode, settings.micChoice)
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
@@ -290,6 +292,41 @@ class AssistantService : Service() {
         }
     }
 
+    /** Проверка микрофона: записать 4 секунды и проиграть обратно. */
+    private fun micTest() {
+        if (busy) return
+        val waiting = wakeJob
+        waiting?.cancel()
+        job = scope.launch {
+            waiting?.join()
+            busy = true
+            try {
+                routing.requestFocus()
+                if (settings.useHeadsetMic && !routing.enableHeadsetMic()) {
+                    EventLog.add("Микрофон гарнитуры недоступен")
+                }
+                Earcons.listenStart()
+                updateStatus("Проверка микрофона: говорите…")
+                val pcm = recorder.recordFixed(settings.micChoice, 4000)
+                routing.disableHeadsetMic()
+                Earcons.listenEnd()
+                updateStatus("Проверка: воспроизвожу запись")
+                Earcons.playPcm(pcm, AudioUtil.SAMPLE_RATE) // как есть, без усиления — чтобы было слышно реальное качество
+                updateStatus("Готов.")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                EventLog.add("Проверка микрофона: ошибка ${e.message}")
+            } finally {
+                busy = false
+                routing.disableHeadsetMic()
+                routing.abandonFocus()
+                claimMediaButtons()
+                startWakeLoop()
+            }
+        }
+    }
+
     /**
      * Вопрос → ответ.
      * @param heardPcm звук фразы со словом-триггером (в ней может уже быть вопрос) или null при запуске кнопкой.
@@ -298,7 +335,6 @@ class AssistantService : Service() {
         busy = true
         try {
             routing.requestFocus() // музыка на паузу
-            beep()
 
             var question: String? = null
             if (heardText != null) {
@@ -309,16 +345,19 @@ class AssistantService : Service() {
                 EventLog.add("Фраза с триггером: $text")
                 question = stripWakeWord(text)
             }
+            // Вопрос уже прозвучал вместе с триггером — подтверждаем сигналом "услышал"
+            if (question != null) Earcons.listenEnd()
 
             // Вопроса ещё нет (нажали кнопку или сказали только "Гера") — слушаем его отдельно
             if (question == null) {
                 if (settings.useHeadsetMic && !routing.enableHeadsetMic()) {
                     EventLog.add("Микрофон гарнитуры недоступен, слушаю микрофоном телефона")
                 }
-                delay(250) // чтобы сигнал не попал в запись
+                Earcons.listenStart() // сигнал "говорите" (ждёт, пока доиграет, чтобы не попасть в запись)
                 updateStatus("Слушаю…")
-                val pcm = recorder.recordPhrase(settings.useHeadsetMic, settings.micSensitivity)
+                val pcm = recorder.recordPhrase(settings.micChoice, settings.micSensitivity)
                 routing.disableHeadsetMic() // ответ — снова в нормальном качестве
+                if (pcm != null) Earcons.listenEnd() // сигнал "услышал, думаю"
                 question = if (pcm == null) null else {
                     updateStatus("Распознаю…")
                     transcribe(pcm).ifBlank { null }
@@ -327,6 +366,7 @@ class AssistantService : Service() {
             EventLog.add("Распознано: ${question ?: "(ничего)"}")
 
             if (question == null) {
+                Earcons.fail()
                 updateStatus("Не расслышал")
                 speaker.speak("Не расслышал.", settings.speechRate)
                 return
@@ -365,7 +405,28 @@ class AssistantService : Service() {
             throw IllegalStateException("офлайн-модель не скачана, откройте Геру и нажмите «Скачать»")
         }
         val loud = AudioUtil.normalize(pcm)
-        return if (settings.sttViaApi) apiStt.transcribe(loud) else VoskEngine.transcribe(this, loud)
+        val text = if (settings.sttViaApi) apiStt.transcribe(loud) else VoskEngine.transcribe(this, loud)
+        if (isHallucination(text)) {
+            EventLog.add("Отброшено как шум: «$text»")
+            return ""
+        }
+        return text
+    }
+
+    /**
+     * Whisper на шуме или обрывке записи "слышит" типовые фразы из субтитров и смех.
+     * Такие результаты считаем пустыми.
+     */
+    private fun isHallucination(text: String): Boolean {
+        val t = text.lowercase().replace(Regex("[^\\p{L} ]"), " ").replace(Regex("\\s+"), " ").trim()
+        if (t.isEmpty()) return true
+        if (Regex("^(ха|хa|хе|хи|а|м|э)( (ха|хе|хи|а|м|э))*$").matches(t)) return true // "ха ха ха", "м м"
+        val junk = listOf(
+            "продолжение следует", "субтитры", "спасибо за просмотр", "подписывайтесь на канал",
+            "редактор субтитров", "корректор", "до новых встреч", "смех", "музыка", "аплодисменты",
+            "короткий вопрос голосовому ассистенту" // эхо нашей подсказки для Whisper
+        )
+        return junk.any { t.contains(it) } && t.split(' ').size <= 8
     }
 
     /** "Гера, какая погода" -> "какая погода". null — если кроме обращения ничего не сказали. */
